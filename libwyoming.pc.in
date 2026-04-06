@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: libwyoming
+Description: Wyoming voice protocol library (client + server + Piper TTS)
+Version: @PACKAGE_VERSION@
+Libs: -L${libdir} -lwyoming
+Cflags: -I${includedir}

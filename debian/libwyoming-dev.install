@@ -1,0 +1,5 @@
+usr/include/libwyoming/*
+usr/lib/*/libwyoming.so
+usr/lib/*/libwyoming.a
+usr/lib/*/libwyoming.la
+usr/lib/*/pkgconfig/libwyoming.pc

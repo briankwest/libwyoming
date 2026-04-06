@@ -1,0 +1,33 @@
+Source: libwyoming
+Section: libs
+Priority: optional
+Maintainer: Brian West <brian@kerchunk.net>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-autoreconf,
+Standards-Version: 4.6.2
+Homepage: https://github.com/briankwest/libwyoming
+Rules-Requires-Root: no
+
+Package: libwyoming0
+Architecture: any
+Multi-Arch: same
+Section: libs
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Wyoming voice protocol library
+ libwyoming is a C library implementing the Wyoming voice protocol
+ used by Home Assistant for TTS, ASR, and other voice services.
+ Provides client and server APIs over TCP with JSON-line framing
+ and binary audio payloads.
+
+Package: libwyoming-dev
+Architecture: any
+Multi-Arch: same
+Section: libdevel
+Depends: libwyoming0 (= ${binary:Version}), ${misc:Depends}
+Description: Wyoming voice protocol library (development files)
+ libwyoming is a C library implementing the Wyoming voice protocol
+ used by Home Assistant for TTS, ASR, and other voice services.
+ .
+ This package contains the header files and pkg-config file needed
+ to build programs that use libwyoming.

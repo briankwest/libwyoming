@@ -1,0 +1,9 @@
+libwyoming (0.1.0-1) unstable; urgency=low
+
+  * Initial release
+  * Wyoming protocol client and server APIs
+  * Buffered event reader/writer with JSON-line framing
+  * Optional Piper TTS engine integration
+  * Standalone wyoming-piper-server binary
+
+ -- Brian West <brian@kerchunk.net>  Mon, 06 Apr 2026 00:00:00 +0000

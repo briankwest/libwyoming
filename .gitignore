@@ -1,0 +1,50 @@
+# Build artifacts
+*.o
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.libs/
+.libs/
+.deps/
+*.Plo
+*.Po
+
+# Autotools generated
+autom4te.cache/
+config.h
+config.h.in~
+config.log
+config.status
+configure~
+stamp-h1
+libtool
+Makefile
+!Makefile.am
+
+# pkg-config generated
+libwyoming.pc
+
+# Test artifacts
+tests/test_libwyoming
+tests/*.log
+tests/*.trs
+tests/test-suite.log
+
+# Binary
+tools/wyoming-piper-server
+
+# Debian build
+debian/.debhelper/
+debian/libwyoming0/
+debian/libwyoming-dev/
+debian/tmp/
+debian/files
+debian/*.debhelper
+debian/*.debhelper.log
+debian/*.substvars
+debian/autoreconf.after
+debian/autoreconf.before
+debian/debhelper-build-stamp
+src/cJSON/.dirstamp
