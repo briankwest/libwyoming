@@ -48,3 +48,4 @@ debian/autoreconf.after
 debian/autoreconf.before
 debian/debhelper-build-stamp
 src/cJSON/.dirstamp
+data/*.deb
