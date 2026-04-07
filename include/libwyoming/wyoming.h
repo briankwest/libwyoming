@@ -29,6 +29,8 @@ typedef enum {
 #define WYOMING_EVENT_AUDIO_START   "audio-start"
 #define WYOMING_EVENT_AUDIO_CHUNK   "audio-chunk"
 #define WYOMING_EVENT_AUDIO_STOP    "audio-stop"
+#define WYOMING_EVENT_TRANSCRIBE    "transcribe"
+#define WYOMING_EVENT_TRANSCRIPT    "transcript"
 #define WYOMING_EVENT_DESCRIBE      "describe"
 #define WYOMING_EVENT_INFO          "info"
 #define WYOMING_EVENT_ERROR         "error"
@@ -106,6 +108,15 @@ wyoming_error_t wyoming_synthesize_pcm(wyoming_conn_t *conn,
 
 wyoming_error_t wyoming_describe(wyoming_conn_t *conn,
                                  wyoming_info_t *info_out);
+
+/* Send PCM audio for transcription.  Returns heap-allocated text in
+ * *text_out (caller must free).  language may be NULL for auto-detect. */
+wyoming_error_t wyoming_transcribe_pcm(wyoming_conn_t *conn,
+                                       const int16_t *pcm,
+                                       size_t samples,
+                                       const wyoming_audio_format_t *format,
+                                       const char *language,
+                                       char **text_out);
 
 void wyoming_close(wyoming_conn_t *conn);
 

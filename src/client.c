@@ -361,6 +361,137 @@ void wyoming_info_free(wyoming_info_t *info)
 	memset(info, 0, sizeof(*info));
 }
 
+/* ── Transcribe (ASR) ───────────────────────────────────────── */
+
+wyoming_error_t wyoming_transcribe_pcm(wyoming_conn_t *conn,
+                                       const int16_t *pcm,
+                                       size_t samples,
+                                       const wyoming_audio_format_t *format,
+                                       const char *language,
+                                       char **text_out)
+{
+	if (!conn || !pcm || samples == 0 || !format || !text_out)
+		return WYOMING_ERR_INVAL;
+
+	*text_out = NULL;
+	wyoming_error_t rc;
+
+	/* 1. Send transcribe event (with optional language) */
+	{
+		wyoming_event_t evt;
+		wyoming_event_init(&evt);
+		evt.type = strdup(WYOMING_EVENT_TRANSCRIBE);
+
+		cJSON *data = cJSON_CreateObject();
+		if (language && language[0])
+			cJSON_AddStringToObject(data, "language", language);
+		evt.data = data;
+
+		rc = wyoming_write_event(conn, &evt);
+		wyoming_event_free(&evt);
+		if (rc != WYOMING_OK)
+			return rc;
+	}
+
+	/* 2. Send audio-start */
+	{
+		wyoming_event_t evt;
+		wyoming_event_init(&evt);
+		evt.type = strdup(WYOMING_EVENT_AUDIO_START);
+
+		cJSON *data = cJSON_CreateObject();
+		cJSON_AddNumberToObject(data, "rate", format->rate);
+		cJSON_AddNumberToObject(data, "width", format->width);
+		cJSON_AddNumberToObject(data, "channels", format->channels);
+		evt.data = data;
+
+		rc = wyoming_write_event(conn, &evt);
+		wyoming_event_free(&evt);
+		if (rc != WYOMING_OK)
+			return rc;
+	}
+
+	/* 3. Send audio-chunks (2048 bytes per chunk) */
+	{
+		const size_t chunk_samples = 1024;
+		const uint8_t *raw = (const uint8_t *)pcm;
+		size_t total_bytes = samples * sizeof(int16_t);
+		size_t chunk_bytes = chunk_samples * sizeof(int16_t);
+		size_t offset = 0;
+
+		while (offset < total_bytes) {
+			size_t send_bytes = total_bytes - offset;
+			if (send_bytes > chunk_bytes) send_bytes = chunk_bytes;
+
+			wyoming_event_t evt;
+			wyoming_event_init(&evt);
+			evt.type = strdup(WYOMING_EVENT_AUDIO_CHUNK);
+
+			cJSON *data = cJSON_CreateObject();
+			cJSON_AddNumberToObject(data, "rate", format->rate);
+			cJSON_AddNumberToObject(data, "width", format->width);
+			cJSON_AddNumberToObject(data, "channels", format->channels);
+			evt.data = data;
+
+			evt.payload = malloc(send_bytes);
+			if (!evt.payload) {
+				wyoming_event_free(&evt);
+				return WYOMING_ERR_NOMEM;
+			}
+			memcpy(evt.payload, raw + offset, send_bytes);
+			evt.payload_len = send_bytes;
+
+			rc = wyoming_write_event(conn, &evt);
+			wyoming_event_free(&evt);
+			if (rc != WYOMING_OK)
+				return rc;
+
+			offset += send_bytes;
+		}
+	}
+
+	/* 4. Send audio-stop */
+	{
+		wyoming_event_t evt;
+		wyoming_event_init(&evt);
+		evt.type = strdup(WYOMING_EVENT_AUDIO_STOP);
+
+		rc = wyoming_write_event(conn, &evt);
+		wyoming_event_free(&evt);
+		if (rc != WYOMING_OK)
+			return rc;
+	}
+
+	/* 5. Read transcript response */
+	for (;;) {
+		wyoming_event_t event;
+		wyoming_event_init(&event);
+
+		rc = wyoming_read_event(conn, &event);
+		if (rc != WYOMING_OK)
+			return rc;
+
+		if (strcmp(event.type, WYOMING_EVENT_TRANSCRIPT) == 0) {
+			if (event.data) {
+				cJSON *t = cJSON_GetObjectItemCaseSensitive(event.data,
+				                                            "text");
+				if (cJSON_IsString(t) && t->valuestring)
+					*text_out = strdup(t->valuestring);
+			}
+			wyoming_event_free(&event);
+			return *text_out ? WYOMING_OK : WYOMING_ERR_PROTO;
+		}
+
+		if (strcmp(event.type, WYOMING_EVENT_ERROR) == 0) {
+			wyoming_event_free(&event);
+			return WYOMING_ERR_PROTO;
+		}
+
+		/* Skip unknown events */
+		wyoming_event_free(&event);
+	}
+}
+
 /* ── Close ───────────────────────────────────────────────────── */
 
 void wyoming_close(wyoming_conn_t *conn)
