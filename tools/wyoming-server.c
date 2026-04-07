@@ -24,6 +24,7 @@
 
 #include <libwyoming/wyoming.h>
 #include "wyoming_config.h"
+#include "wyoming_log.h"
 #include "cJSON.h"
 
 static wyoming_server_t *g_server = NULL;
@@ -243,21 +244,28 @@ int main(int argc, char **argv)
 	/* Load config */
 	wyoming_config_t *cfg = wyoming_config_load(config_path);
 	if (!cfg) {
-		fprintf(stderr, "Error: cannot read config: %s\n", config_path);
+		WY_LOGE("cannot read config: %s", config_path);
 		return 1;
+	}
+
+	/* Initialize logging from config */
+	{
+		const char *log_level = wyoming_config_get(cfg, "log", "level");
+		const char *log_file  = wyoming_config_get(cfg, "log", "file");
+		wy_log_init(wy_log_parse_level(log_level), log_file);
 	}
 
 	const char *host = wyoming_config_get(cfg, "server", "host");
 	int port = wyoming_config_get_int(cfg, "server", "port", 10200);
 	if (!host) host = "0.0.0.0";
 
-	fprintf(stderr, "Wyoming server %s\n", LIBWYOMING_VERSION_STRING);
-	fprintf(stderr, "Config: %s\n", config_path);
+	WY_LOGI("Wyoming server %s", LIBWYOMING_VERSION_STRING);
+	WY_LOGI("config: %s", config_path);
 
 	/* Create server */
 	wyoming_server_t *srv = wyoming_server_create(host, (uint16_t)port);
 	if (!srv) {
-		fprintf(stderr, "Error: failed to bind %s:%d\n", host, port);
+		WY_LOGE("failed to bind %s:%d", host, port);
 		wyoming_config_free(cfg);
 		return 1;
 	}
@@ -271,7 +279,7 @@ int main(int argc, char **argv)
 	if (tts_engine && tts_model && strcmp(tts_engine, "piper") == 0) {
 		struct stat st;
 		if (stat(tts_model, &st) != 0) {
-			fprintf(stderr, "Warning: TTS model not found: %s\n", tts_model);
+			WY_LOGW("TTS model not found: %s", tts_model);
 		} else {
 			const char *piper_bin = wyoming_config_get(cfg, "tts", "piper_binary");
 			if (!piper_bin) piper_bin = "/usr/bin/piper";
@@ -289,7 +297,7 @@ int main(int argc, char **argv)
 			wyoming_server_add_voice(srv, voice_name ? voice_name : "default",
 			                         langs, NULL);
 
-			fprintf(stderr, "TTS: piper voice=%s rate=%d\n",
+			WY_LOGI("TTS: piper voice=%s rate=%d",
 			        voice_name ? voice_name : "?", piper_cfg.sample_rate);
 
 			free(voice_name);
@@ -314,10 +322,10 @@ int main(int argc, char **argv)
 			const char *langs[] = { vlang, NULL };
 			wyoming_server_add_voice(srv, vname ? vname : "default", langs, NULL);
 
-			fprintf(stderr, "TTS: piper-native voice=%s rate=%d\n",
+			WY_LOGI("TTS: piper-native voice=%s rate=%d",
 			        vname ? vname : "?", wyoming_piper_sample_rate(piper));
 		} else {
-			fprintf(stderr, "Warning: failed to load Piper model: %s\n", tts_model);
+			WY_LOGW("failed to load Piper model: %s", tts_model);
 		}
 	}
 #endif
@@ -362,11 +370,11 @@ int main(int argc, char **argv)
 			    wyoming_sherpa_model_name(sherpa), langs,
 			    streaming ? "streaming" : "offline");
 
-			fprintf(stderr, "ASR: sherpa-onnx model=%s type=%s lang=%s %s\n",
+			WY_LOGI("ASR: sherpa-onnx model=%s type=%s lang=%s %s",
 			        wyoming_sherpa_model_name(sherpa), model_type, language,
 			        streaming ? "(streaming)" : "(batch)");
 		} else {
-			fprintf(stderr, "Warning: failed to load ASR model: %s\n", asr_model_dir);
+			WY_LOGW("failed to load ASR model: %s", asr_model_dir);
 		}
 	}
 #endif
@@ -379,14 +387,15 @@ int main(int argc, char **argv)
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGTERM, &sa, NULL);
 
-	fprintf(stderr, "Listening on %s:%d\n", host, port);
+	WY_LOGI("listening on %s:%d", host, port);
 
 	wyoming_error_t rc = wyoming_server_run(srv);
 
-	fprintf(stderr, "Shutting down...\n");
+	WY_LOGI("shutting down");
 
 	wyoming_server_destroy(srv);
 	wyoming_config_free(cfg);
+	wy_log_shutdown();
 
 	return (rc == WYOMING_OK) ? 0 : 1;
 }

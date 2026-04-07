@@ -53,6 +53,10 @@ language = en                    ; Language code (or auto for multilingual model
 
 ; ----------------------------------------------------------------------------
 ; Logging
+;
+; Messages always go to stderr (journald picks this up).
+; Set file to also write to a persistent log file.
 ; ----------------------------------------------------------------------------
 [log]
 ; level = info                   ; error | warn | info | debug
+; file = /var/log/wyoming-server.log  ; persistent log file (optional)

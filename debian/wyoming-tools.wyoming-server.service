@@ -12,7 +12,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadOnlyPaths=/usr/share/wyoming
-ReadWritePaths=/etc/wyoming
+ReadWritePaths=/etc/wyoming /var/log
 
 [Install]
 WantedBy=multi-user.target
