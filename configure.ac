@@ -8,19 +8,30 @@ AM_PROG_AR
 LT_INIT
 
 AC_PROG_CC
+AC_PROG_CXX
 AC_PROG_INSTALL
 
-# Optional: Piper TTS engine
+# Piper TTS engine (requires libpiper_phonemize + onnxruntime + espeak-ng)
 AC_ARG_ENABLE([piper],
-  AS_HELP_STRING([--enable-piper], [Build Piper TTS engine (requires libpiper)]),
+  AS_HELP_STRING([--enable-piper], [Build Piper TTS engine (default: auto)]),
   [enable_piper=$enableval], [enable_piper=auto])
 
 have_piper=no
 if test "x$enable_piper" != "xno"; then
-  AC_CHECK_LIB([piper], [piper_create], [have_piper=yes], [have_piper=no])
-  AC_CHECK_LIB([onnxruntime], [OrtGetApiBase], [], [have_piper=no])
+  save_LIBS="$LIBS"
+  AC_CHECK_LIB([piper_phonemize], [_ZN5piper16phonemize_eSpeakENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERNS_19eSpeakPhonemeConfigERSt6vectorIS8_IDiSaIDiEESaISA_EE],
+    [have_piper_phonemize=yes], [have_piper_phonemize=no], [-lstdc++])
+  AC_CHECK_LIB([onnxruntime], [OrtGetApiBase],
+    [have_onnxruntime=yes], [have_onnxruntime=no])
+  AC_LANG_PUSH([C++])
+  AC_CHECK_HEADER([piper-phonemize/phonemize.hpp], [have_piper_headers=yes], [have_piper_headers=no])
+  AC_LANG_POP([C++])
+  LIBS="$save_LIBS"
+  if test "x$have_piper_phonemize" = "xyes" -a "x$have_onnxruntime" = "xyes" -a "x$have_piper_headers" = "xyes"; then
+    have_piper=yes
+  fi
   if test "x$enable_piper" = "xyes" -a "x$have_piper" = "xno"; then
-    AC_MSG_ERROR([Piper requested but libpiper/libonnxruntime not found])
+    AC_MSG_ERROR([Piper requested but dependencies not found (libpiper_phonemize, onnxruntime, piper-phonemize headers)])
   fi
 fi
 AM_CONDITIONAL([HAVE_PIPER], [test "x$have_piper" = "xyes"])

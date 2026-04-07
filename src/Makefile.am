@@ -7,7 +7,7 @@ libwyoming_la_SOURCES = \
 	cJSON/cJSON.c
 
 if HAVE_PIPER
-libwyoming_la_SOURCES += piper.c
+libwyoming_la_SOURCES += piper.c piper_bridge.cpp
 endif
 
 if HAVE_SHERPA
@@ -25,8 +25,15 @@ libwyoming_la_LDFLAGS = -version-info 0:0:0
 libwyoming_la_LIBADD = -lm
 
 if HAVE_PIPER
-libwyoming_la_LIBADD += -lpiper -lonnxruntime
+libwyoming_la_LIBADD += -lpiper_phonemize -lonnxruntime -lespeak-ng -lstdc++
 endif
+
+# C++ flags for piper bridge
+libwyoming_la_CXXFLAGS = -std=c++17 -Wall -Wextra \
+	-I$(top_srcdir)/include \
+	-I$(srcdir) \
+	-I$(srcdir)/cJSON \
+	-DLIBWYOMING_GIT_HASH=\"$(GIT_HASH)\"
 
 if HAVE_SHERPA
 libwyoming_la_CFLAGS += $(SHERPA_CFLAGS)
