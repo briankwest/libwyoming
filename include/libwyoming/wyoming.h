@@ -78,8 +78,24 @@ typedef struct {
 } wyoming_tts_info_t;
 
 typedef struct {
+	char               *name;
+	char              **languages;
+	int                 language_count;
+	char               *description;
+} wyoming_model_t;
+
+typedef struct {
+	char               *name;
+	char               *version;
+	wyoming_model_t    *models;
+	int                 model_count;
+} wyoming_asr_info_t;
+
+typedef struct {
 	wyoming_tts_info_t *tts;
 	int                 tts_count;
+	wyoming_asr_info_t *asr;
+	int                 asr_count;
 } wyoming_info_t;
 
 void wyoming_info_free(wyoming_info_t *info);
@@ -148,6 +164,27 @@ wyoming_error_t wyoming_server_add_voice(wyoming_server_t *srv,
 
 wyoming_error_t wyoming_server_add_speaker(wyoming_server_t *srv,
                                            const char *speaker_name);
+
+/* Non-streaming (batch) ASR callback.
+ * Receives complete audio, returns heap-allocated transcript text. */
+typedef wyoming_error_t (*wyoming_asr_fn)(
+	const int16_t *pcm,
+	size_t samples,
+	const wyoming_audio_format_t *format,
+	const char *language,          /* NULL = auto-detect */
+	char **text_out,               /* heap-allocated, caller frees */
+	void *userdata);
+
+void wyoming_server_set_asr(wyoming_server_t *srv,
+                            wyoming_asr_fn fn,
+                            void *userdata,
+                            const char *name,
+                            const char *version);
+
+wyoming_error_t wyoming_server_add_asr_model(wyoming_server_t *srv,
+                                              const char *name,
+                                              const char *const *languages,
+                                              const char *description);
 
 wyoming_error_t wyoming_server_run(wyoming_server_t *srv);
 

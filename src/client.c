@@ -329,6 +329,67 @@ wyoming_error_t wyoming_describe(wyoming_conn_t *conn,
 				}
 			}
 		}
+
+		/* Parse ASR info from data */
+		cJSON *asr_arr = cJSON_GetObjectItemCaseSensitive(
+			info_event.data, "asr");
+		if (cJSON_IsArray(asr_arr)) {
+			int ac = cJSON_GetArraySize(asr_arr);
+			if (ac > 0) {
+				info_out->asr = calloc((size_t)ac,
+				                       sizeof(wyoming_asr_info_t));
+				if (info_out->asr) {
+					info_out->asr_count = ac;
+					int ai = 0;
+					cJSON *a;
+					cJSON_ArrayForEach(a, asr_arr) {
+						wyoming_asr_info_t *asr = &info_out->asr[ai++];
+
+						cJSON *n = cJSON_GetObjectItemCaseSensitive(a, "name");
+						if (cJSON_IsString(n))
+							asr->name = strdup(n->valuestring);
+
+						cJSON *ver = cJSON_GetObjectItemCaseSensitive(a, "version");
+						if (cJSON_IsString(ver))
+							asr->version = strdup(ver->valuestring);
+
+						cJSON *models = cJSON_GetObjectItemCaseSensitive(a, "models");
+						if (cJSON_IsArray(models)) {
+							int mc = cJSON_GetArraySize(models);
+							asr->models = calloc((size_t)mc, sizeof(wyoming_model_t));
+							if (asr->models) {
+								asr->model_count = mc;
+								int mi = 0;
+								cJSON *m;
+								cJSON_ArrayForEach(m, models) {
+									wyoming_model_t *mod = &asr->models[mi++];
+									cJSON *mn = cJSON_GetObjectItemCaseSensitive(m, "name");
+									if (cJSON_IsString(mn))
+										mod->name = strdup(mn->valuestring);
+									cJSON *md = cJSON_GetObjectItemCaseSensitive(m, "description");
+									if (cJSON_IsString(md))
+										mod->description = strdup(md->valuestring);
+									cJSON *ml = cJSON_GetObjectItemCaseSensitive(m, "languages");
+									if (cJSON_IsArray(ml)) {
+										int lc = cJSON_GetArraySize(ml);
+										mod->languages = calloc((size_t)lc + 1, sizeof(char *));
+										if (mod->languages) {
+											mod->language_count = lc;
+											int li = 0;
+											cJSON *lang;
+											cJSON_ArrayForEach(lang, ml) {
+												if (cJSON_IsString(lang))
+													mod->languages[li++] = strdup(lang->valuestring);
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	wyoming_event_free(&info_event);
@@ -358,6 +419,23 @@ void wyoming_info_free(wyoming_info_t *info)
 		free(tts->voices);
 	}
 	free(info->tts);
+
+	for (int i = 0; i < info->asr_count; i++) {
+		wyoming_asr_info_t *asr = &info->asr[i];
+		free(asr->name);
+		free(asr->version);
+		for (int j = 0; j < asr->model_count; j++) {
+			wyoming_model_t *m = &asr->models[j];
+			free(m->name);
+			free(m->description);
+			for (int k = 0; k < m->language_count; k++)
+				free(m->languages[k]);
+			free(m->languages);
+		}
+		free(asr->models);
+	}
+	free(info->asr);
+
 	memset(info, 0, sizeof(*info));
 }
 

@@ -35,9 +35,19 @@ struct wyoming_server {
 	char            *tts_name;
 	char            *tts_version;
 
-	/* Registered voices */
+	/* Registered voices (TTS) */
 	server_voice_t   voices[WYOMING_MAX_VOICES];
 	int              voice_count;
+
+	/* ASR callback */
+	wyoming_asr_fn   asr_fn;
+	void            *asr_userdata;
+	char            *asr_name;
+	char            *asr_version;
+
+	/* Registered ASR models */
+	server_model_t   asr_models[WYOMING_MAX_MODELS];
+	int              asr_model_count;
 
 #ifdef HAVE_EPOLL
 	int              epoll_fd;
@@ -180,6 +190,48 @@ wyoming_error_t wyoming_server_add_speaker(wyoming_server_t *srv,
 	return WYOMING_OK;
 }
 
+void wyoming_server_set_asr(wyoming_server_t *srv,
+                            wyoming_asr_fn fn,
+                            void *userdata,
+                            const char *name,
+                            const char *version)
+{
+	if (!srv) return;
+	srv->asr_fn = fn;
+	srv->asr_userdata = userdata;
+	free(srv->asr_name);
+	srv->asr_name = name ? strdup(name) : NULL;
+	free(srv->asr_version);
+	srv->asr_version = version ? strdup(version) : NULL;
+}
+
+wyoming_error_t wyoming_server_add_asr_model(wyoming_server_t *srv,
+                                              const char *name,
+                                              const char *const *languages,
+                                              const char *description)
+{
+	if (!srv || !name)
+		return WYOMING_ERR_INVAL;
+	if (srv->asr_model_count >= WYOMING_MAX_MODELS)
+		return WYOMING_ERR_NOMEM;
+
+	server_model_t *m = &srv->asr_models[srv->asr_model_count];
+	memset(m, 0, sizeof(*m));
+	m->name = strdup(name);
+	if (description)
+		m->description = strdup(description);
+
+	if (languages) {
+		for (int i = 0; languages[i] && i < WYOMING_MAX_LANGS; i++) {
+			m->languages[i] = strdup(languages[i]);
+			m->language_count++;
+		}
+	}
+
+	srv->asr_model_count++;
+	return WYOMING_OK;
+}
+
 uint16_t wyoming_server_port(wyoming_server_t *srv)
 {
 	return srv ? srv->bound_port : 0;
@@ -206,6 +258,8 @@ void wyoming_server_destroy(wyoming_server_t *srv)
 
 	free(srv->tts_name);
 	free(srv->tts_version);
+	free(srv->asr_name);
+	free(srv->asr_version);
 
 	for (int i = 0; i < srv->voice_count; i++) {
 		server_voice_t *v = &srv->voices[i];
@@ -215,6 +269,14 @@ void wyoming_server_destroy(wyoming_server_t *srv)
 			free(v->languages[j]);
 		for (int j = 0; j < v->speaker_count; j++)
 			free(v->speakers[j]);
+	}
+
+	for (int i = 0; i < srv->asr_model_count; i++) {
+		server_model_t *m = &srv->asr_models[i];
+		free(m->name);
+		free(m->description);
+		for (int j = 0; j < m->language_count; j++)
+			free(m->languages[j]);
 	}
 
 	free(srv);
@@ -264,8 +326,39 @@ static cJSON *build_info_data(wyoming_server_t *srv)
 		cJSON_AddItemToArray(tts_arr, tts);
 	}
 
+	/* Build ASR array */
+	cJSON *asr_arr = cJSON_AddArrayToObject(data, "asr");
+
+	if (srv->asr_fn) {
+		cJSON *asr = cJSON_CreateObject();
+		if (srv->asr_name)
+			cJSON_AddStringToObject(asr, "name", srv->asr_name);
+		if (srv->asr_version)
+			cJSON_AddStringToObject(asr, "version", srv->asr_version);
+		cJSON_AddBoolToObject(asr, "installed", 1);
+
+		cJSON *models = cJSON_AddArrayToObject(asr, "models");
+		for (int i = 0; i < srv->asr_model_count; i++) {
+			server_model_t *sm = &srv->asr_models[i];
+			cJSON *model = cJSON_CreateObject();
+
+			cJSON_AddStringToObject(model, "name", sm->name);
+			if (sm->description)
+				cJSON_AddStringToObject(model, "description",
+				                        sm->description);
+
+			cJSON *langs = cJSON_AddArrayToObject(model, "languages");
+			for (int j = 0; j < sm->language_count; j++)
+				cJSON_AddItemToArray(langs,
+				                     cJSON_CreateString(sm->languages[j]));
+
+			cJSON_AddItemToArray(models, model);
+		}
+
+		cJSON_AddItemToArray(asr_arr, asr);
+	}
+
 	/* Empty arrays for other service types */
-	cJSON_AddArrayToObject(data, "asr");
 	cJSON_AddArrayToObject(data, "handle");
 	cJSON_AddArrayToObject(data, "intent");
 	cJSON_AddArrayToObject(data, "wake");
@@ -412,6 +505,119 @@ static void handle_client(wyoming_server_t *srv, int client_fd)
 			}
 
 			free(pcm);
+			continue;
+		}
+
+		/* Dispatch: transcribe (non-streaming ASR) */
+		if (strcmp(event.type, WYOMING_EVENT_TRANSCRIBE) == 0) {
+			char *language = NULL;
+
+			if (event.data) {
+				cJSON *l = cJSON_GetObjectItemCaseSensitive(
+					event.data, "language");
+				if (cJSON_IsString(l) && l->valuestring)
+					language = strdup(l->valuestring);
+			}
+			wyoming_event_free(&event);
+
+			if (!srv->asr_fn) {
+				free(language);
+				continue;
+			}
+
+			/* Read audio-start */
+			wyoming_audio_format_t fmt = { .rate = 16000, .width = 2, .channels = 1 };
+			{
+				wyoming_event_t astart;
+				wyoming_event_init(&astart);
+				rc = wyoming_event_read_iobuf(&io, &astart);
+				if (rc != WYOMING_OK || !astart.type ||
+				    strcmp(astart.type, WYOMING_EVENT_AUDIO_START) != 0) {
+					wyoming_event_free(&astart);
+					break;
+				}
+				if (astart.data) {
+					cJSON *r = cJSON_GetObjectItemCaseSensitive(astart.data, "rate");
+					cJSON *w = cJSON_GetObjectItemCaseSensitive(astart.data, "width");
+					cJSON *ch = cJSON_GetObjectItemCaseSensitive(astart.data, "channels");
+					if (cJSON_IsNumber(r)) fmt.rate = (int)r->valuedouble;
+					if (cJSON_IsNumber(w)) fmt.width = (int)w->valuedouble;
+					if (cJSON_IsNumber(ch)) fmt.channels = (int)ch->valuedouble;
+				}
+				wyoming_event_free(&astart);
+			}
+
+			/* Read audio-chunks until audio-stop */
+			int16_t *pcm = NULL;
+			size_t pcm_cap = 0;
+			size_t pcm_total = 0;
+			int got_stop = 0;
+
+			while (!got_stop && srv->running) {
+				wyoming_event_t aevt;
+				wyoming_event_init(&aevt);
+				rc = wyoming_event_read_iobuf(&io, &aevt);
+				if (rc != WYOMING_OK) {
+					wyoming_event_free(&aevt);
+					break;
+				}
+
+				if (strcmp(aevt.type, WYOMING_EVENT_AUDIO_CHUNK) == 0) {
+					if (aevt.payload && aevt.payload_len > 0) {
+						size_t chunk_samples = aevt.payload_len / sizeof(int16_t);
+						if (pcm_total + chunk_samples > pcm_cap) {
+							pcm_cap = (pcm_total + chunk_samples) * 2;
+							if (pcm_cap < 16000) pcm_cap = 16000;
+							int16_t *tmp = realloc(pcm, pcm_cap * sizeof(int16_t));
+							if (!tmp) {
+								wyoming_event_free(&aevt);
+								free(pcm);
+								pcm = NULL;
+								break;
+							}
+							pcm = tmp;
+						}
+						memcpy(pcm + pcm_total, aevt.payload,
+						       chunk_samples * sizeof(int16_t));
+						pcm_total += chunk_samples;
+					}
+				} else if (strcmp(aevt.type, WYOMING_EVENT_AUDIO_STOP) == 0) {
+					got_stop = 1;
+				}
+
+				wyoming_event_free(&aevt);
+			}
+
+			if (!pcm || pcm_total == 0 || !got_stop) {
+				free(pcm);
+				free(language);
+				continue;
+			}
+
+			/* Call ASR engine */
+			char *text = NULL;
+			rc = srv->asr_fn(pcm, pcm_total, &fmt, language,
+			                 &text, srv->asr_userdata);
+			free(pcm);
+
+			/* Send transcript response */
+			{
+				wyoming_event_t tresp;
+				wyoming_event_init(&tresp);
+				tresp.type = strdup(WYOMING_EVENT_TRANSCRIPT);
+				tresp.data = cJSON_CreateObject();
+
+				if (rc == WYOMING_OK && text)
+					cJSON_AddStringToObject(tresp.data, "text", text);
+				else
+					cJSON_AddStringToObject(tresp.data, "text", "");
+
+				wyoming_event_write_fd(client_fd, &tresp);
+				wyoming_event_free(&tresp);
+			}
+
+			free(text);
+			free(language);
 			continue;
 		}
 

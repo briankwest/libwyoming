@@ -48,6 +48,16 @@ typedef struct {
 	int   speaker_count;
 } server_voice_t;
 
+/* ── Server ASR model storage ───────────────────────────────── */
+#define WYOMING_MAX_MODELS    16
+
+typedef struct {
+	char *name;
+	char *languages[WYOMING_MAX_LANGS];
+	int   language_count;
+	char *description;
+} server_model_t;
+
 /* ── Helper ──────────────────────────────────────────────────── */
 static inline int wy_min(int a, int b) { return a < b ? a : b; }
 
