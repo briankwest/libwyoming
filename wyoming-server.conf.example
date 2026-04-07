@@ -1,0 +1,58 @@
+; ============================================================================
+; wyoming-server.conf — Combined TTS + ASR Wyoming protocol server
+;
+; Copy to /etc/wyoming/wyoming-server.conf and edit for your installation.
+; Lines starting with ; or # are comments.
+;
+; Run: wyoming-server -c /etc/wyoming/wyoming-server.conf
+;
+; Both [tts] and [asr] are optional — you can run TTS-only, ASR-only,
+; or both on the same port. Home Assistant sees all services via describe.
+; ============================================================================
+
+[server]
+host = 0.0.0.0                  ; Bind address (:: for IPv6 dual-stack)
+port = 10200                     ; Listen port
+
+; ----------------------------------------------------------------------------
+; Text-to-Speech (Piper)
+;
+; Engines:
+;   piper        — Subprocess: pipes text to /usr/bin/piper binary
+;   piper-native — In-process: loads ONNX model directly (requires
+;                  libwyoming built with --enable-piper)
+;
+; Voice packages: apt install wyoming-voice-en-us-lessac-high
+; Install path: /usr/share/wyoming/voices/<name>/model.onnx
+; ----------------------------------------------------------------------------
+[tts]
+engine = piper
+model = /usr/share/wyoming/voices/en_US-lessac-high/model.onnx
+; piper_binary = /usr/bin/piper  ; Path to piper binary (subprocess engine)
+; espeak_data = /usr/share/espeak-ng-data  ; (piper-native engine only)
+
+; ----------------------------------------------------------------------------
+; Automatic Speech Recognition (Sherpa-ONNX)
+;
+; Model types:
+;   whisper    — Offline (batch). Best accuracy. Models: tiny.en, base.en, small
+;   zipformer  — Online (streaming). Low latency, real-time transcription
+;   paraformer — Online (streaming) or offline
+;   nemo_ctc   — Online (streaming)
+;   sense_voice — Offline, multilingual
+;
+; Model packages: apt install wyoming-model-whisper-base-en
+; Install path: /usr/share/wyoming/models/<name>/
+; ----------------------------------------------------------------------------
+[asr]
+engine = sherpa
+model_dir = /usr/share/wyoming/models/whisper-base.en
+model_type = whisper             ; whisper | zipformer | paraformer | nemo_ctc
+language = en                    ; Language code (or auto for multilingual models)
+; streaming = on                 ; Enable streaming ASR (requires zipformer/paraformer)
+
+; ----------------------------------------------------------------------------
+; Logging
+; ----------------------------------------------------------------------------
+[log]
+; level = info                   ; error | warn | info | debug

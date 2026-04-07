@@ -1,20 +1,18 @@
 [Unit]
-Description=Wyoming Piper TTS Server
+Description=Wyoming Voice Server (TTS + ASR)
 After=network.target
 Documentation=https://github.com/briankwest/libwyoming
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/wyoming-piper-server \
-    --port 10200 \
-    --model /usr/share/wyoming/voices/en_US-lessac-high/model.onnx
-EnvironmentFile=-/etc/default/wyoming-piper
+ExecStart=/usr/bin/wyoming-server -c /etc/wyoming/wyoming-server.conf
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadOnlyPaths=/usr/share/wyoming
+ReadWritePaths=/etc/wyoming
 
 [Install]
 WantedBy=multi-user.target

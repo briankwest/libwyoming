@@ -1,4 +1,0 @@
-# Override default wyoming-piper-server options
-# Uncomment and modify as needed
-#
-# WYOMING_PIPER_OPTS="--model /usr/share/wyoming/voices/en_US-amy-medium/model.onnx --port 10200"

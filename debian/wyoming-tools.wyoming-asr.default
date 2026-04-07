@@ -1,4 +1,0 @@
-# Override default wyoming-asr-server options
-# Uncomment and modify as needed
-#
-# WYOMING_ASR_OPTS="--model-dir /usr/share/wyoming/models/whisper-small --model-type whisper --language en --port 10300"
