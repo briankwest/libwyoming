@@ -17,6 +17,10 @@ override_dh_auto_configure:
 override_dh_auto_test:
 	$(MAKE) check || true
 
+override_dh_installsystemd:
+	dh_installsystemd --package=wyoming-tools --name=wyoming-piper --no-enable --no-start
+	dh_installsystemd --package=wyoming-tools --name=wyoming-asr --no-enable --no-start
+
 override_dh_gencontrol:
 ifeq ($(GIT_TAG),)
 	dh_gencontrol -- -v$(shell dpkg-parsechangelog -S Version)+git$(GIT_HASH)

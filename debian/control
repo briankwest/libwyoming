@@ -31,3 +31,18 @@ Description: Wyoming voice protocol library (development files)
  .
  This package contains the header files and pkg-config file needed
  to build programs that use libwyoming.
+
+Package: wyoming-tools
+Architecture: any
+Section: sound
+Depends: libwyoming0 (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: Wyoming voice protocol server binaries and tools
+ Standalone Wyoming protocol servers and CLI tools:
+ .
+ wyoming-piper-server — TTS server using Piper (subprocess).
+ wyoming-asr-server   — ASR server using Sherpa-ONNX (native C).
+                         Supports Whisper, Zipformer, Paraformer.
+ wyoming-describe     — CLI tool to query any Wyoming server.
+ .
+ Includes systemd service files for wyoming-piper and wyoming-asr.
+ Compatible with Home Assistant, kerchunk, and any Wyoming client.

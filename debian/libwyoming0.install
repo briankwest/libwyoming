@@ -1,4 +1,1 @@
 usr/lib/*/libwyoming.so.*
-usr/bin/wyoming-piper-server
-usr/bin/wyoming-asr-server
-usr/bin/wyoming-describe
