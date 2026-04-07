@@ -1,3 +1,4 @@
+usr/bin/wyoming-piper-server
 usr/include/libwyoming/*
 usr/lib/*/libwyoming.so
 usr/lib/*/libwyoming.a
