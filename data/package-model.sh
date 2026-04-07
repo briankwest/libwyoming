@@ -23,6 +23,7 @@ MODEL_URLS[whisper-base.en]="sherpa-onnx-whisper-base.en.tar.bz2"
 MODEL_URLS[whisper-small.en]="sherpa-onnx-whisper-small.en.tar.bz2"
 MODEL_URLS[whisper-small]="sherpa-onnx-whisper-small.tar.bz2"
 MODEL_URLS[whisper-medium.en]="sherpa-onnx-whisper-medium.en.tar.bz2"
+MODEL_URLS[zipformer-en]="sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2"
 
 # Model type mapping
 declare -A MODEL_TYPES
@@ -31,6 +32,7 @@ MODEL_TYPES[whisper-base.en]="whisper"
 MODEL_TYPES[whisper-small.en]="whisper"
 MODEL_TYPES[whisper-small]="whisper"
 MODEL_TYPES[whisper-medium.en]="whisper"
+MODEL_TYPES[zipformer-en]="zipformer"
 
 # Language mapping
 declare -A MODEL_LANGS
@@ -39,6 +41,11 @@ MODEL_LANGS[whisper-base.en]="en"
 MODEL_LANGS[whisper-small.en]="en"
 MODEL_LANGS[whisper-small]="auto"
 MODEL_LANGS[whisper-medium.en]="en"
+MODEL_LANGS[zipformer-en]="en"
+
+# Streaming flag
+declare -A MODEL_STREAMING
+MODEL_STREAMING[zipformer-en]="1"
 
 if [ -z "${MODEL_URLS[$MODEL]+x}" ]; then
   echo "Unknown model: $MODEL" >&2
@@ -96,6 +103,24 @@ if [ "$MODEL_TYPE" = "whisper" ]; then
   cp "$ENC" "$INSTALL_DIR/encoder.onnx"
   cp "$DEC" "$INSTALL_DIR/decoder.onnx"
   cp "$TOK" "$INSTALL_DIR/tokens.txt"
+elif [ "$MODEL_TYPE" = "zipformer" ]; then
+  # Zipformer transducer: encoder, decoder, joiner, tokens
+  # Prefer int8 variants
+  ENC=$(ls "$EXTRACTED"/*encoder*.int8.onnx 2>/dev/null | head -1 || ls "$EXTRACTED"/*encoder*.onnx 2>/dev/null | head -1)
+  DEC=$(ls "$EXTRACTED"/*decoder*.int8.onnx 2>/dev/null | head -1 || ls "$EXTRACTED"/*decoder*.onnx 2>/dev/null | head -1)
+  JOI=$(ls "$EXTRACTED"/*joiner*.int8.onnx 2>/dev/null | head -1 || ls "$EXTRACTED"/*joiner*.onnx 2>/dev/null | head -1)
+  TOK=$(ls "$EXTRACTED"/tokens.txt 2>/dev/null)
+
+  if [ -z "$ENC" ] || [ -z "$DEC" ] || [ -z "$JOI" ] || [ -z "$TOK" ]; then
+    echo "ERROR: Missing zipformer model files in $EXTRACTED" >&2
+    ls "$EXTRACTED"/ >&2
+    exit 1
+  fi
+
+  cp "$ENC" "$INSTALL_DIR/encoder.onnx"
+  cp "$DEC" "$INSTALL_DIR/decoder.onnx"
+  cp "$JOI" "$INSTALL_DIR/joiner.onnx"
+  cp "$TOK" "$INSTALL_DIR/tokens.txt"
 fi
 
 # Copy test wavs if present
@@ -137,6 +162,12 @@ EOF
 DEB_FILE="${PKG_NAME}_${VERSION}_all.deb"
 dpkg-deb --build "$BUILD_DIR/pkg" "$DEB_FILE"
 
+STREAMING_FLAG="${MODEL_STREAMING[$MODEL]:-}"
 echo "=== Built: $DEB_FILE ==="
 echo "  Install: sudo dpkg -i $DEB_FILE"
-echo "  Use: wyoming-asr-server --model-dir /usr/share/wyoming/models/$MODEL --model-type $MODEL_TYPE --language $LANGUAGE"
+if [ "$STREAMING_FLAG" = "1" ]; then
+  echo "  Use: wyoming-asr-server --model-dir /usr/share/wyoming/models/$MODEL --model-type $MODEL_TYPE --language $LANGUAGE --streaming"
+else
+  echo "  Use: wyoming-asr-server --model-dir /usr/share/wyoming/models/$MODEL --model-type $MODEL_TYPE --language $LANGUAGE"
+fi
+# This was already added via the catalog above
