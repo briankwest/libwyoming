@@ -570,6 +570,140 @@ wyoming_error_t wyoming_transcribe_pcm(wyoming_conn_t *conn,
 	}
 }
 
+/* ── Streaming Transcribe (client) ───────────────────────────── */
+
+wyoming_error_t wyoming_transcribe_start(wyoming_conn_t *conn,
+                                          const wyoming_audio_format_t *format,
+                                          const char *language)
+{
+	if (!conn || !format)
+		return WYOMING_ERR_INVAL;
+
+	/* Send transcribe-start */
+	wyoming_event_t evt;
+	wyoming_event_init(&evt);
+	evt.type = strdup(WYOMING_EVENT_TRANSCRIBE_START);
+	evt.data = cJSON_CreateObject();
+	if (language && language[0])
+		cJSON_AddStringToObject(evt.data, "language", language);
+
+	wyoming_error_t rc = wyoming_write_event(conn, &evt);
+	wyoming_event_free(&evt);
+	if (rc != WYOMING_OK)
+		return rc;
+
+	/* Send audio-start */
+	wyoming_event_init(&evt);
+	evt.type = strdup(WYOMING_EVENT_AUDIO_START);
+	evt.data = cJSON_CreateObject();
+	cJSON_AddNumberToObject(evt.data, "rate", format->rate);
+	cJSON_AddNumberToObject(evt.data, "width", format->width);
+	cJSON_AddNumberToObject(evt.data, "channels", format->channels);
+
+	rc = wyoming_write_event(conn, &evt);
+	wyoming_event_free(&evt);
+	return rc;
+}
+
+wyoming_error_t wyoming_transcribe_chunk(wyoming_conn_t *conn,
+                                          const int16_t *pcm,
+                                          size_t samples,
+                                          const wyoming_audio_format_t *format)
+{
+	if (!conn || !pcm || samples == 0 || !format)
+		return WYOMING_ERR_INVAL;
+
+	wyoming_event_t evt;
+	wyoming_event_init(&evt);
+	evt.type = strdup(WYOMING_EVENT_AUDIO_CHUNK);
+	evt.data = cJSON_CreateObject();
+	cJSON_AddNumberToObject(evt.data, "rate", format->rate);
+	cJSON_AddNumberToObject(evt.data, "width", format->width);
+	cJSON_AddNumberToObject(evt.data, "channels", format->channels);
+
+	size_t bytes = samples * sizeof(int16_t);
+	evt.payload = malloc(bytes);
+	if (!evt.payload) {
+		wyoming_event_free(&evt);
+		return WYOMING_ERR_NOMEM;
+	}
+	memcpy(evt.payload, pcm, bytes);
+	evt.payload_len = bytes;
+
+	wyoming_error_t rc = wyoming_write_event(conn, &evt);
+	wyoming_event_free(&evt);
+	return rc;
+}
+
+wyoming_error_t wyoming_transcribe_stop(wyoming_conn_t *conn,
+                                         char **text_out)
+{
+	if (!conn || !text_out)
+		return WYOMING_ERR_INVAL;
+
+	*text_out = NULL;
+
+	/* Send audio-stop */
+	wyoming_event_t evt;
+	wyoming_event_init(&evt);
+	evt.type = strdup(WYOMING_EVENT_AUDIO_STOP);
+	wyoming_error_t rc = wyoming_write_event(conn, &evt);
+	wyoming_event_free(&evt);
+	if (rc != WYOMING_OK)
+		return rc;
+
+	/* Send transcribe-stop */
+	wyoming_event_init(&evt);
+	evt.type = strdup(WYOMING_EVENT_TRANSCRIBE_STOP);
+	rc = wyoming_write_event(conn, &evt);
+	wyoming_event_free(&evt);
+	if (rc != WYOMING_OK)
+		return rc;
+
+	/* Read transcript events until we get a final one */
+	char *last_text = NULL;
+	for (;;) {
+		wyoming_event_t resp;
+		wyoming_event_init(&resp);
+
+		rc = wyoming_read_event(conn, &resp);
+		if (rc != WYOMING_OK) {
+			free(last_text);
+			return rc;
+		}
+
+		if (strcmp(resp.type, WYOMING_EVENT_TRANSCRIPT) == 0) {
+			if (resp.data) {
+				cJSON *t = cJSON_GetObjectItemCaseSensitive(resp.data, "text");
+				if (cJSON_IsString(t) && t->valuestring) {
+					free(last_text);
+					last_text = strdup(t->valuestring);
+				}
+				/* Check if this is a partial or final transcript */
+				cJSON *partial = cJSON_GetObjectItemCaseSensitive(
+					resp.data, "is_partial");
+				if (!partial || !cJSON_IsTrue(partial)) {
+					/* Final transcript */
+					wyoming_event_free(&resp);
+					*text_out = last_text;
+					return WYOMING_OK;
+				}
+			}
+			wyoming_event_free(&resp);
+			continue;
+		}
+
+		if (strcmp(resp.type, WYOMING_EVENT_ERROR) == 0) {
+			wyoming_event_free(&resp);
+			free(last_text);
+			return WYOMING_ERR_PROTO;
+		}
+
+		/* Skip unknown events */
+		wyoming_event_free(&resp);
+	}
+}
+
 /* ── Close ───────────────────────────────────────────────────── */
 
 void wyoming_close(wyoming_conn_t *conn)

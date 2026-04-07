@@ -31,6 +31,8 @@ typedef enum {
 #define WYOMING_EVENT_AUDIO_STOP    "audio-stop"
 #define WYOMING_EVENT_TRANSCRIBE    "transcribe"
 #define WYOMING_EVENT_TRANSCRIPT    "transcript"
+#define WYOMING_EVENT_TRANSCRIBE_START "transcribe-start"
+#define WYOMING_EVENT_TRANSCRIBE_STOP  "transcribe-stop"
 #define WYOMING_EVENT_DESCRIBE      "describe"
 #define WYOMING_EVENT_INFO          "info"
 #define WYOMING_EVENT_ERROR         "error"
@@ -134,6 +136,21 @@ wyoming_error_t wyoming_transcribe_pcm(wyoming_conn_t *conn,
                                        const char *language,
                                        char **text_out);
 
+/* Streaming transcription (client side).
+ * Call start, then feed chunks, then stop to get final text.
+ * Partial transcripts may arrive as events between chunks. */
+wyoming_error_t wyoming_transcribe_start(wyoming_conn_t *conn,
+                                          const wyoming_audio_format_t *format,
+                                          const char *language);
+
+wyoming_error_t wyoming_transcribe_chunk(wyoming_conn_t *conn,
+                                          const int16_t *pcm,
+                                          size_t samples,
+                                          const wyoming_audio_format_t *format);
+
+wyoming_error_t wyoming_transcribe_stop(wyoming_conn_t *conn,
+                                         char **text_out);
+
 void wyoming_close(wyoming_conn_t *conn);
 
 /* ── Server API ──────────────────────────────────────────────── */
@@ -185,6 +202,35 @@ wyoming_error_t wyoming_server_add_asr_model(wyoming_server_t *srv,
                                               const char *name,
                                               const char *const *languages,
                                               const char *description);
+
+/* Streaming ASR callbacks.
+ * create:  called on transcribe-start, returns opaque stream context.
+ * process: called per audio-chunk (pcm!=NULL) and on audio-stop (pcm=NULL,
+ *          is_final=1).  May set *text_out to partial or final transcript.
+ * destroy: called after the stream ends. */
+typedef void *(*wyoming_asr_stream_create_fn)(
+	const wyoming_audio_format_t *format,
+	const char *language,
+	void *userdata);
+
+typedef wyoming_error_t (*wyoming_asr_stream_fn)(
+	void *stream_ctx,
+	const int16_t *pcm,            /* NULL on final call */
+	size_t samples,                /* 0 on final call */
+	const wyoming_audio_format_t *format,
+	int is_final,
+	char **text_out,               /* partial/final text, NULL if nothing yet */
+	void *userdata);
+
+typedef void (*wyoming_asr_stream_destroy_fn)(
+	void *stream_ctx,
+	void *userdata);
+
+void wyoming_server_set_asr_streaming(wyoming_server_t *srv,
+                                       wyoming_asr_stream_create_fn create_fn,
+                                       wyoming_asr_stream_fn process_fn,
+                                       wyoming_asr_stream_destroy_fn destroy_fn,
+                                       void *userdata);
 
 wyoming_error_t wyoming_server_run(wyoming_server_t *srv);
 

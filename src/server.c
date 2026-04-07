@@ -49,6 +49,12 @@ struct wyoming_server {
 	server_model_t   asr_models[WYOMING_MAX_MODELS];
 	int              asr_model_count;
 
+	/* Streaming ASR callbacks */
+	wyoming_asr_stream_create_fn   asr_stream_create;
+	wyoming_asr_stream_fn          asr_stream_process;
+	wyoming_asr_stream_destroy_fn  asr_stream_destroy;
+	void                          *asr_stream_userdata;
+
 #ifdef HAVE_EPOLL
 	int              epoll_fd;
 #endif
@@ -230,6 +236,19 @@ wyoming_error_t wyoming_server_add_asr_model(wyoming_server_t *srv,
 
 	srv->asr_model_count++;
 	return WYOMING_OK;
+}
+
+void wyoming_server_set_asr_streaming(wyoming_server_t *srv,
+                                       wyoming_asr_stream_create_fn create_fn,
+                                       wyoming_asr_stream_fn process_fn,
+                                       wyoming_asr_stream_destroy_fn destroy_fn,
+                                       void *userdata)
+{
+	if (!srv) return;
+	srv->asr_stream_create  = create_fn;
+	srv->asr_stream_process = process_fn;
+	srv->asr_stream_destroy = destroy_fn;
+	srv->asr_stream_userdata = userdata;
 }
 
 uint16_t wyoming_server_port(wyoming_server_t *srv)
@@ -618,6 +637,137 @@ static void handle_client(wyoming_server_t *srv, int client_fd)
 
 			free(text);
 			free(language);
+			continue;
+		}
+
+		/* Dispatch: transcribe-start (streaming ASR) */
+		if (strcmp(event.type, WYOMING_EVENT_TRANSCRIBE_START) == 0) {
+			char *language = NULL;
+
+			if (event.data) {
+				cJSON *l = cJSON_GetObjectItemCaseSensitive(
+					event.data, "language");
+				if (cJSON_IsString(l) && l->valuestring)
+					language = strdup(l->valuestring);
+			}
+			wyoming_event_free(&event);
+
+			if (!srv->asr_stream_create || !srv->asr_stream_process) {
+				free(language);
+				continue;
+			}
+
+			/* Read audio-start to get format */
+			wyoming_audio_format_t fmt = { .rate = 16000, .width = 2, .channels = 1 };
+			{
+				wyoming_event_t astart;
+				wyoming_event_init(&astart);
+				rc = wyoming_event_read_iobuf(&io, &astart);
+				if (rc != WYOMING_OK || !astart.type ||
+				    strcmp(astart.type, WYOMING_EVENT_AUDIO_START) != 0) {
+					wyoming_event_free(&astart);
+					free(language);
+					break;
+				}
+				if (astart.data) {
+					cJSON *r = cJSON_GetObjectItemCaseSensitive(astart.data, "rate");
+					cJSON *w = cJSON_GetObjectItemCaseSensitive(astart.data, "width");
+					cJSON *ch = cJSON_GetObjectItemCaseSensitive(astart.data, "channels");
+					if (cJSON_IsNumber(r)) fmt.rate = (int)r->valuedouble;
+					if (cJSON_IsNumber(w)) fmt.width = (int)w->valuedouble;
+					if (cJSON_IsNumber(ch)) fmt.channels = (int)ch->valuedouble;
+				}
+				wyoming_event_free(&astart);
+			}
+
+			/* Create stream context */
+			void *stream_ctx = srv->asr_stream_create(
+				&fmt, language, srv->asr_stream_userdata);
+			free(language);
+
+			if (!stream_ctx)
+				continue;
+
+			/* Process audio-chunks until audio-stop or transcribe-stop */
+			int got_stop = 0;
+			while (!got_stop && srv->running) {
+				wyoming_event_t aevt;
+				wyoming_event_init(&aevt);
+				rc = wyoming_event_read_iobuf(&io, &aevt);
+				if (rc != WYOMING_OK) {
+					wyoming_event_free(&aevt);
+					break;
+				}
+
+				if (strcmp(aevt.type, WYOMING_EVENT_AUDIO_CHUNK) == 0) {
+					if (aevt.payload && aevt.payload_len > 0) {
+						size_t chunk_samples = aevt.payload_len / sizeof(int16_t);
+						char *partial = NULL;
+						rc = srv->asr_stream_process(
+							stream_ctx,
+							(const int16_t *)aevt.payload,
+							chunk_samples, &fmt, 0,
+							&partial, srv->asr_stream_userdata);
+
+						/* Send partial transcript if available */
+						if (rc == WYOMING_OK && partial && partial[0]) {
+							wyoming_event_t tresp;
+							wyoming_event_init(&tresp);
+							tresp.type = strdup(WYOMING_EVENT_TRANSCRIPT);
+							tresp.data = cJSON_CreateObject();
+							cJSON_AddStringToObject(tresp.data, "text", partial);
+							cJSON_AddBoolToObject(tresp.data, "is_partial", 1);
+							wyoming_event_write_fd(client_fd, &tresp);
+							wyoming_event_free(&tresp);
+						}
+						free(partial);
+					}
+				} else if (strcmp(aevt.type, WYOMING_EVENT_AUDIO_STOP) == 0 ||
+				           strcmp(aevt.type, WYOMING_EVENT_TRANSCRIBE_STOP) == 0) {
+					got_stop = 1;
+				}
+
+				wyoming_event_free(&aevt);
+			}
+
+			/* Final call to get complete transcript */
+			char *final_text = NULL;
+			srv->asr_stream_process(stream_ctx, NULL, 0, &fmt, 1,
+			                        &final_text, srv->asr_stream_userdata);
+
+			/* Send final transcript */
+			{
+				wyoming_event_t tresp;
+				wyoming_event_init(&tresp);
+				tresp.type = strdup(WYOMING_EVENT_TRANSCRIPT);
+				tresp.data = cJSON_CreateObject();
+				cJSON_AddStringToObject(tresp.data, "text",
+				                        final_text ? final_text : "");
+				wyoming_event_write_fd(client_fd, &tresp);
+				wyoming_event_free(&tresp);
+			}
+			free(final_text);
+
+			/* Read remaining transcribe-stop if we stopped on audio-stop */
+			if (got_stop) {
+				wyoming_event_t drain;
+				wyoming_event_init(&drain);
+				/* Set a short timeout so we don't block if client already sent it */
+				struct timeval short_tv = { .tv_sec = 1, .tv_usec = 0 };
+				setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
+				           &short_tv, sizeof(short_tv));
+				wyoming_event_read_iobuf(&io, &drain);
+				wyoming_event_free(&drain);
+				/* Restore timeout */
+				struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
+				setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
+				           &tv, sizeof(tv));
+			}
+
+			/* Destroy stream */
+			if (srv->asr_stream_destroy)
+				srv->asr_stream_destroy(stream_ctx, srv->asr_stream_userdata);
+
 			continue;
 		}
 
