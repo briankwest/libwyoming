@@ -28,6 +28,43 @@ if test "x$have_piper" = "xyes"; then
   AC_DEFINE([WYOMING_HAVE_PIPER], [1], [Piper TTS engine available])
 fi
 
+# Optional: Sherpa-ONNX ASR engine
+AC_ARG_WITH([sherpa-onnx],
+  AS_HELP_STRING([--with-sherpa-onnx@<:@=DIR@:>@],
+                 [sherpa-onnx install prefix (default: auto-detect)]),
+  [sherpa_prefix=$withval], [sherpa_prefix=auto])
+
+have_sherpa=no
+if test "x$sherpa_prefix" != "xno"; then
+  save_CFLAGS="$CFLAGS"
+  save_LIBS="$LIBS"
+  if test "x$sherpa_prefix" != "xauto" -a "x$sherpa_prefix" != "xyes"; then
+    SHERPA_CFLAGS="-I$sherpa_prefix/include"
+    SHERPA_LIBS="-L$sherpa_prefix/lib"
+  else
+    SHERPA_CFLAGS="-I/usr/include"
+    SHERPA_LIBS=""
+  fi
+  CFLAGS="$CFLAGS $SHERPA_CFLAGS"
+  LIBS="$LIBS $SHERPA_LIBS -lsherpa-onnx-c-api"
+  AC_CHECK_HEADER([sherpa-onnx/c-api/c-api.h], [
+    AC_CHECK_LIB([sherpa-onnx-c-api],
+                  [SherpaOnnxCreateOfflineRecognizer],
+                  [have_sherpa=yes], [have_sherpa=no])
+  ], [have_sherpa=no])
+  CFLAGS="$save_CFLAGS"
+  LIBS="$save_LIBS"
+  if test "x$have_sherpa" = "xyes"; then
+    SHERPA_LIBS="$SHERPA_LIBS -lsherpa-onnx-c-api"
+  fi
+fi
+AM_CONDITIONAL([HAVE_SHERPA], [test "x$have_sherpa" = "xyes"])
+if test "x$have_sherpa" = "xyes"; then
+  AC_DEFINE([WYOMING_HAVE_SHERPA], [1], [Sherpa-ONNX ASR engine available])
+  AC_SUBST([SHERPA_CFLAGS])
+  AC_SUBST([SHERPA_LIBS])
+fi
+
 AC_CHECK_FUNC([epoll_create1], [AC_DEFINE([HAVE_EPOLL], [1], [Have epoll])])
 
 AC_CONFIG_HEADERS([config.h])

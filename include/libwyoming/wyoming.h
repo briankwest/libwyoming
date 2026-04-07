@@ -265,6 +265,41 @@ void             wyoming_piper_destroy(wyoming_piper_t *piper);
 
 #endif /* WYOMING_HAVE_PIPER */
 
+/* ── Sherpa-ONNX ASR Engine (optional) ──────────────────────── */
+#ifdef WYOMING_HAVE_SHERPA
+
+typedef struct wyoming_sherpa wyoming_sherpa_t;
+
+/* Create offline (batch) recognizer.
+ * model_type: "whisper", "paraformer", "nemo_ctc", "sense_voice" */
+wyoming_sherpa_t *wyoming_sherpa_create(const char *model_dir,
+                                        const char *model_type,
+                                        const char *language);
+
+/* Create online (streaming) recognizer.
+ * model_type: "zipformer", "paraformer", "nemo_ctc" */
+wyoming_sherpa_t *wyoming_sherpa_create_streaming(const char *model_dir,
+                                                    const char *model_type,
+                                                    const char *language);
+
+/* Get callbacks for server registration */
+wyoming_asr_fn                  wyoming_sherpa_get_asr_callback(void);
+wyoming_asr_stream_create_fn    wyoming_sherpa_get_stream_create(void);
+wyoming_asr_stream_fn           wyoming_sherpa_get_stream_process(void);
+wyoming_asr_stream_destroy_fn   wyoming_sherpa_get_stream_destroy(void);
+
+void *wyoming_sherpa_as_userdata(wyoming_sherpa_t *s);
+
+/* Query */
+const char *wyoming_sherpa_model_name(const wyoming_sherpa_t *s);
+const char *wyoming_sherpa_language(const wyoming_sherpa_t *s);
+int         wyoming_sherpa_sample_rate(const wyoming_sherpa_t *s);
+int         wyoming_sherpa_is_streaming(const wyoming_sherpa_t *s);
+
+void wyoming_sherpa_destroy(wyoming_sherpa_t *s);
+
+#endif /* WYOMING_HAVE_SHERPA */
+
 #ifdef __cplusplus
 }
 #endif

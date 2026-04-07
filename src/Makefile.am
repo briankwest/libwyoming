@@ -10,6 +10,10 @@ if HAVE_PIPER
 libwyoming_la_SOURCES += piper.c
 endif
 
+if HAVE_SHERPA
+libwyoming_la_SOURCES += sherpa.c
+endif
+
 libwyoming_la_CFLAGS = \
 	-std=c99 -D_POSIX_C_SOURCE=200809L \
 	-Wall -Wextra -pedantic \
@@ -22,4 +26,9 @@ libwyoming_la_LIBADD = -lm
 
 if HAVE_PIPER
 libwyoming_la_LIBADD += -lpiper -lonnxruntime
+endif
+
+if HAVE_SHERPA
+libwyoming_la_CFLAGS += $(SHERPA_CFLAGS)
+libwyoming_la_LIBADD += $(SHERPA_LIBS)
 endif

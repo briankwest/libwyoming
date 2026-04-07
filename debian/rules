@@ -11,6 +11,9 @@ endif
 %:
 	dh $@
 
+override_dh_auto_configure:
+	dh_auto_configure -- --with-sherpa-onnx=/usr
+
 override_dh_auto_test:
 	$(MAKE) check || true
 
