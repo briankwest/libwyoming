@@ -128,36 +128,17 @@ wyoming_sherpa_t *wyoming_sherpa_create(const char *model_dir,
 	return s;
 }
 
-/* Batch ASR callback */
-static wyoming_error_t sherpa_batch_asr(const int16_t *pcm, size_t samples,
-                                         const wyoming_audio_format_t *format,
-                                         const char *language,
-                                         char **text_out, void *userdata)
+/* Batch ASR via offline recognizer */
+static wyoming_error_t sherpa_batch_offline(wyoming_sherpa_t *s,
+                                             const float *fsamples,
+                                             size_t samples, int rate,
+                                             char **text_out)
 {
-	(void)language;
-	wyoming_sherpa_t *s = userdata;
-	if (!s || !s->offline || !pcm || samples == 0 || !text_out)
-		return WYOMING_ERR_INVAL;
-
-	*text_out = NULL;
-
-	/* Convert int16 to float */
-	float *fsamples = int16_to_float(pcm, samples);
-	if (!fsamples)
-		return WYOMING_ERR_NOMEM;
-
-	/* Create stream, accept waveform, decode */
 	const SherpaOnnxOfflineStream *stream =
 		SherpaOnnxCreateOfflineStream(s->offline);
-	if (!stream) {
-		free(fsamples);
-		return WYOMING_ERR_PROTO;
-	}
+	if (!stream) return WYOMING_ERR_PROTO;
 
-	SherpaOnnxAcceptWaveformOffline(stream, format->rate, fsamples,
-	                                 (int32_t)samples);
-	free(fsamples);
-
+	SherpaOnnxAcceptWaveformOffline(stream, rate, fsamples, (int32_t)samples);
 	SherpaOnnxDecodeOfflineStream(s->offline, stream);
 
 	const SherpaOnnxOfflineRecognizerResult *result =
@@ -171,6 +152,65 @@ static wyoming_error_t sherpa_batch_asr(const int16_t *pcm, size_t samples,
 	SherpaOnnxDestroyOfflineStream(stream);
 
 	return *text_out ? WYOMING_OK : WYOMING_ERR_PROTO;
+}
+
+/* Batch ASR via online (streaming) recognizer — feed all audio at once */
+static wyoming_error_t sherpa_batch_via_online(wyoming_sherpa_t *s,
+                                                const float *fsamples,
+                                                size_t samples, int rate,
+                                                char **text_out)
+{
+	const SherpaOnnxOnlineStream *stream =
+		SherpaOnnxCreateOnlineStream(s->online);
+	if (!stream) return WYOMING_ERR_PROTO;
+
+	SherpaOnnxOnlineStreamAcceptWaveform(stream, rate, fsamples,
+	                                      (int32_t)samples);
+	SherpaOnnxOnlineStreamInputFinished(stream);
+
+	while (SherpaOnnxIsOnlineStreamReady(s->online, stream))
+		SherpaOnnxDecodeOnlineStream(s->online, stream);
+
+	const SherpaOnnxOnlineRecognizerResult *result =
+		SherpaOnnxGetOnlineStreamResult(s->online, stream);
+
+	if (result && result->text && result->text[0])
+		*text_out = strdup(result->text);
+
+	if (result)
+		SherpaOnnxDestroyOnlineRecognizerResult(result);
+	SherpaOnnxDestroyOnlineStream(stream);
+
+	return *text_out ? WYOMING_OK : WYOMING_ERR_PROTO;
+}
+
+/* Batch ASR callback — works with both offline and online recognizers */
+static wyoming_error_t sherpa_batch_asr(const int16_t *pcm, size_t samples,
+                                         const wyoming_audio_format_t *format,
+                                         const char *language,
+                                         char **text_out, void *userdata)
+{
+	(void)language;
+	wyoming_sherpa_t *s = userdata;
+	if (!s || !pcm || samples == 0 || !text_out)
+		return WYOMING_ERR_INVAL;
+	if (!s->offline && !s->online)
+		return WYOMING_ERR_INVAL;
+
+	*text_out = NULL;
+
+	float *fsamples = int16_to_float(pcm, samples);
+	if (!fsamples)
+		return WYOMING_ERR_NOMEM;
+
+	wyoming_error_t rc;
+	if (s->offline)
+		rc = sherpa_batch_offline(s, fsamples, samples, format->rate, text_out);
+	else
+		rc = sherpa_batch_via_online(s, fsamples, samples, format->rate, text_out);
+
+	free(fsamples);
+	return rc;
 }
 
 /* ── Online (streaming) ASR ─────────────────────────────────── */
