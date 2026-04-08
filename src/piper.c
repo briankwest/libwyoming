@@ -62,6 +62,24 @@ struct wyoming_piper {
 
 static char *extract_stem(const char *path)
 {
+	/* Extract voice name from parent directory:
+	 * .../en_US-lessac-high/model.onnx → en_US-lessac-high
+	 * Falls back to filename stem if no parent directory. */
+	char *tmp = strdup(path);
+	if (tmp) {
+		char *slash = strrchr(tmp, '/');
+		if (slash) {
+			*slash = '\0';
+			char *parent = strrchr(tmp, '/');
+			if (parent && parent[1] != '\0') {
+				char *result = strdup(parent + 1);
+				free(tmp);
+				return result;
+			}
+		}
+		free(tmp);
+	}
+
 	const char *base = strrchr(path, '/');
 	base = base ? base + 1 : path;
 
