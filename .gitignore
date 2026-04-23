@@ -12,15 +12,22 @@
 *.Po
 
 # Autotools generated
+aclocal.m4
 autom4te.cache/
+build-aux/
 config.h
+config.h.in
 config.h.in~
 config.log
 config.status
+configure
 configure~
 stamp-h1
 libtool
 Makefile
+Makefile.in
+*/Makefile
+*/Makefile.in
 !Makefile.am
 
 # pkg-config generated
@@ -34,11 +41,16 @@ tests/test-suite.log
 
 # Binary
 tools/wyoming-piper-server
+tools/wyoming-describe
+tools/wyoming-server
+tools/wyoming-speak
+src/.dirstamp
 
 # Debian build
 debian/.debhelper/
 debian/libwyoming0/
 debian/libwyoming-dev/
+debian/wyoming-tools/
 debian/tmp/
 debian/files
 debian/*.debhelper
