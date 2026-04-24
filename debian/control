@@ -5,6 +5,9 @@ Maintainer: Brian West <brian@kerchunk.net>
 Build-Depends:
  debhelper-compat (= 13),
  dh-autoreconf,
+ libsherpa-onnx-dev,
+ libpiper-phonemize-dev,
+ libespeak-ng-dev,
 Standards-Version: 4.6.2
 Homepage: https://github.com/briankwest/libwyoming
 Rules-Requires-Root: no
