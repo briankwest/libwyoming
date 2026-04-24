@@ -21,6 +21,20 @@
 #include <string.h>
 #include <stdio.h>
 
+/* basename of a path, e.g. "/usr/share/wyoming/models/whisper-base.en"
+ * → "whisper-base.en". Returns the input unchanged if there's no '/'.
+ * Trailing slashes are ignored. */
+static const char *path_basename(const char *p)
+{
+	if (!p || !*p) return "";
+	size_t n = strlen(p);
+	while (n > 1 && p[n-1] == '/') n--;
+	const char *slash = NULL;
+	for (size_t i = 0; i < n; i++)
+		if (p[i] == '/') slash = &p[i];
+	return slash ? slash + 1 : p;
+}
+
 /* ── Engine state ───────────────────────────────────────────── */
 
 struct wyoming_sherpa {
@@ -99,21 +113,21 @@ wyoming_sherpa_t *wyoming_sherpa_create(const char *model_dir,
 		if (language && language[0])
 			config.model_config.whisper.language = language;
 		config.model_config.whisper.tail_paddings = 800;
-		snprintf(s->model_name, sizeof(s->model_name), "whisper");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else if (strcmp(model_type, "paraformer") == 0) {
 		snprintf(model_path, sizeof(model_path), "%s/model.onnx", model_dir);
 		config.model_config.paraformer.model = model_path;
-		snprintf(s->model_name, sizeof(s->model_name), "paraformer");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else if (strcmp(model_type, "nemo_ctc") == 0) {
 		snprintf(model_path, sizeof(model_path), "%s/model.onnx", model_dir);
 		config.model_config.nemo_ctc.model = model_path;
-		snprintf(s->model_name, sizeof(s->model_name), "nemo_ctc");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else if (strcmp(model_type, "sense_voice") == 0) {
 		snprintf(model_path, sizeof(model_path), "%s/model.onnx", model_dir);
 		config.model_config.sense_voice.model = model_path;
 		if (language && language[0])
 			config.model_config.sense_voice.language = language;
-		snprintf(s->model_name, sizeof(s->model_name), "sense_voice");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else {
 		free(s);
 		return NULL;
@@ -258,17 +272,17 @@ wyoming_sherpa_t *wyoming_sherpa_create_streaming(const char *model_dir,
 		config.model_config.transducer.encoder = enc_path;
 		config.model_config.transducer.decoder = dec_path;
 		config.model_config.transducer.joiner = joiner_path;
-		snprintf(s->model_name, sizeof(s->model_name), "zipformer");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else if (strcmp(model_type, "paraformer") == 0) {
 		snprintf(enc_path, sizeof(enc_path), "%s/encoder.onnx", model_dir);
 		snprintf(dec_path, sizeof(dec_path), "%s/decoder.onnx", model_dir);
 		config.model_config.paraformer.encoder = enc_path;
 		config.model_config.paraformer.decoder = dec_path;
-		snprintf(s->model_name, sizeof(s->model_name), "paraformer");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else if (strcmp(model_type, "nemo_ctc") == 0) {
 		snprintf(model_path, sizeof(model_path), "%s/model.onnx", model_dir);
 		config.model_config.nemo_ctc.model = model_path;
-		snprintf(s->model_name, sizeof(s->model_name), "nemo_ctc");
+		snprintf(s->model_name, sizeof(s->model_name), "%s", path_basename(model_dir));
 	} else {
 		free(s);
 		return NULL;
